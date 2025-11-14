@@ -1,0 +1,270 @@
+import tkinter as tk
+import random
+import time
+import os
+class Game2048:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("2048")
+        self.grid_size = 4  
+        self.cell_size = 100
+        self.board = [[0] * self.grid_size for _ in range(self.grid_size)]
+        self.score = 0
+        self.high_score = self.load_high_score()
+        self.game_over = False
+        self.history = []  
+        self.start_time = None 
+        self.elapsed_time = 0 
+        self.timer_running = True  
+        self.canvas = tk.Canvas(self.root, width=self.grid_size * self.cell_size, 
+                                height=self.grid_size * self.cell_size)
+        self.canvas.pack()
+        self.info_frame = tk.Frame(self.root, bg="#f1f1f1", pady=10)
+        self.info_frame.pack(side=tk.TOP, pady=10)
+        
+        self.undo_button = tk.Button(self.info_frame, text="Undo", command=self.undo_move, 
+                                      state=tk.DISABLED, font=("Arial", 14), bg="#4CAF50", fg="white", 
+                                      width=10, height=2, relief="raised", bd=2)
+        self.undo_button.pack(side=tk.LEFT, padx=10)
+        
+        self.score_label = tk.Label(self.info_frame, text="Score: 0", font=("Arial", 18), width=10, bg="#f1f1f1")
+        self.score_label.pack(side=tk.LEFT, padx=10)
+        
+        self.high_score_frame=tk.Frame(self.root,bg="#f1f1f1", pady=10)
+        self.high_score_frame.pack(side=tk.TOP, pady=10)
+        self.high_score_label = tk.Label(self.high_score_frame, text=f"High Score: {self.high_score}", font=("Arial", 18), bg="#f1f1f1")
+        self.high_score_label.pack(side=tk.LEFT, padx=10)
+        self.reset_high_score = tk.Button(self.high_score_frame, text="Reset High Score", command=self.reset_high_score, 
+                                      state=tk.NORMAL, font=("Arial", 14), bg="#FF5722", fg="white", 
+                                      width=15, height=1, relief="raised", bd=2)
+        self.reset_high_score.pack(side=tk.LEFT, padx=6)
+        self.timer_label = tk.Label(self.info_frame, text="Time: 0s", font=("Arial", 18), width=10, bg="#f1f1f1")
+        self.timer_label.pack(side=tk.LEFT, padx=10)
+        
+        self.reset_button = tk.Button(self.info_frame, text="Reset Game", command=self.reset_game, 
+                                      state=tk.NORMAL, font=("Arial", 14), bg="#FF5722", fg="white", 
+                                      width=12, height=2, relief="raised", bd=2)
+        self.reset_button.pack(side=tk.LEFT, padx=10)
+        
+        self.pause_button = tk.Button(self.info_frame, text="Pause", command=self.pause_game, 
+                                      font=("Arial", 14), bg="#FF5722", fg="white", width=10, height=2)
+        self.pause_button.pack(side=tk.LEFT, padx=10)
+        
+        self.play_button = tk.Button(self.info_frame, text="Play", command=self.play_game, 
+                                      font=("Arial", 14), bg="#4CAF50", fg="white", width=10, height=2)
+        self.play_button.pack(side=tk.LEFT, padx=10)
+        
+        self.root.bind("<Left>", self.move_left)
+        self.root.bind("<Right>", self.move_right)
+        self.root.bind("<Up>", self.move_up)
+        self.root.bind("<Down>", self.move_down)
+        
+        self.create_new_tile()
+        self.create_new_tile()
+        self.draw_board()
+
+    def reset_high_score(self):
+        self.high_score=0
+        with open("high_score.txt", "w") as f:
+                f.write(str(self.high_score))
+        self.high_score_label.config(text=f"High Score: {self.high_score}")
+    
+    def load_high_score(self):
+        if os.path.exists("high_score.txt"):
+            with open("high_score.txt", "r") as f:
+                return int(f.read())
+        return 0
+
+    def save_high_score(self):
+        if self.score > self.high_score:
+            self.high_score = self.score
+            with open("high_score.txt", "w") as f:
+                f.write(str(self.high_score))
+            self.high_score_label.config(text=f"High Score: {self.high_score}")
+
+    def create_new_tile(self):
+        empty_cells = [(r, c) for r in range(self.grid_size) for c in range(self.grid_size) if self.board[r][c] == 0]
+        if empty_cells:
+            r, c = random.choice(empty_cells)
+            self.board[r][c] = random.choice([2, 4])
+
+    def draw_board(self):
+        self.canvas.delete("all")
+        for r in range(self.grid_size):
+            for c in range(self.grid_size):
+                value = self.board[r][c]
+                x1 = c * self.cell_size
+                y1 = r * self.cell_size
+                x2 = (c + 1) * self.cell_size
+                y2 = (r + 1) * self.cell_size
+                color = "#c2b3a3" if value == 0 else "#ffcc00" if value == 2 else "#ff9966"
+                self.canvas.create_rectangle(x1, y1, x2, y2, fill=color)
+                if value != 0:
+                    self.canvas.create_text(x1 + self.cell_size / 2, y1 + self.cell_size / 2,
+                                            text=str(value), font=("Arial", 24, "bold"))
+        self.score_label.config(text=f"Score: {self.score}")
+        self.save_high_score()  
+        if not self.game_over:
+            self.update_timer()
+        if self.game_over:
+            self.canvas.create_text(self.grid_size * self.cell_size / 2, self.grid_size * self.cell_size / 2,
+                                    text="Game Over!", font=("Arial", 36, "bold"), fill="red")
+            self.undo_button.config(state=tk.DISABLED) 
+            self.reset_button.config(text="Restart", state=tk.NORMAL) 
+
+    def slide_left(self, row):
+        non_zero = [i for i in row if i != 0]
+        new_row = []
+        while non_zero:
+            if len(non_zero) > 1 and non_zero[0] == non_zero[1]:
+                new_row.append(non_zero[0] * 2)
+                self.score += new_row[-1]
+                non_zero = non_zero[2:]
+            else:
+                new_row.append(non_zero[0])
+                non_zero = non_zero[1:]
+        new_row += [0] * (self.grid_size - len(new_row))
+        return new_row
+
+    def save_state(self):
+        self.history.append((self.score, [row[:] for row in self.board]))
+
+    def undo_move(self):
+        if self.history:
+            self.score, self.board = self.history.pop()
+            self.draw_board()
+            self.undo_button.config(state=tk.DISABLED)  
+
+    def enable_undo_button(self):
+        self.undo_button.config(state=tk.NORMAL)
+
+    def move_left(self, event=None):
+        if self.game_over or not self.timer_running: return
+        self.save_state()  
+        original_board = [row[:] for row in self.board]  
+        for r in range(self.grid_size):
+            self.board[r] = self.slide_left(self.board[r])
+        if self.board != original_board:
+            self.create_new_tile()
+            self.draw_board()
+            self.enable_undo_button() 
+            if self.is_game_over():
+                self.game_over = True
+                self.draw_board()
+
+    def move_right(self, event=None):
+        if self.game_over or not self.timer_running: return
+        self.save_state()  
+        original_board = [row[:] for row in self.board]  
+        for r in range(self.grid_size):
+            self.board[r] = self.board[r][::-1]
+            self.board[r] = self.slide_left(self.board[r])
+            self.board[r] = self.board[r][::-1]
+        if self.board != original_board:
+            self.create_new_tile()
+            self.draw_board()
+            self.enable_undo_button()
+            if self.is_game_over():
+                self.game_over = True
+                self.draw_board()
+
+    def move_up(self, event=None):
+        if self.game_over or not self.timer_running: return
+        self.save_state() 
+        original_board = [row[:] for row in self.board]  
+        for c in range(self.grid_size):
+            col = [self.board[r][c] for r in range(self.grid_size)]
+            new_col = self.slide_left(col)
+            for r in range(self.grid_size):
+                self.board[r][c] = new_col[r]
+        if self.board != original_board:
+            self.create_new_tile()
+            self.draw_board()
+            self.enable_undo_button()  
+            if self.is_game_over():
+                self.game_over = True
+                self.draw_board()
+
+    def move_down(self, event=None):
+        if self.game_over or not self.timer_running: return
+        self.save_state()  
+        original_board = [row[:] for row in self.board]  
+        for c in range(self.grid_size):
+            col = [self.board[r][c] for r in range(self.grid_size)]
+            col = col[::-1]
+            new_col = self.slide_left(col)
+            new_col = new_col[::-1]
+            for r in range(self.grid_size):
+                self.board[r][c] = new_col[r]
+        if self.board != original_board:
+            self.create_new_tile()
+            self.draw_board()
+            self.enable_undo_button()  
+            if self.is_game_over():
+                self.game_over = True
+                self.draw_board()
+
+    def is_game_over(self):
+        for r in range(self.grid_size):
+            for c in range(self.grid_size):
+                if self.board[r][c] == 0:
+                    return False
+        for r in range(self.grid_size):
+            for c in range(self.grid_size - 1):
+                if self.board[r][c] == self.board[r][c + 1]: 
+                    return False
+        for c in range(self.grid_size):
+            for r in range(self.grid_size - 1):
+                if self.board[r][c] == self.board[r + 1][c]: 
+                    return False
+        return True
+
+    def update_timer(self):
+        if self.game_over or not self.timer_running:
+            return
+        if not self.start_time:
+            self.start_time = time.time() 
+        self.elapsed_time = int(time.time() - self.start_time)
+        self.timer_label.config(text=f"Time: {self.elapsed_time}s")
+        if self.timer_running:
+            self.root.after(1000, self.update_timer) 
+
+    def pause_game(self):
+        self.timer_running = False
+        self.canvas.unbind("<Left>")
+        self.canvas.unbind("<Right>")
+        self.canvas.unbind("<Up>")
+        self.canvas.unbind("<Down>")
+        self.undo_button.config(state=tk.DISABLED)
+        self.reset_button.config(state=tk.DISABLED)
+        self.pause_button.config(state=tk.DISABLED)
+        self.play_button.config(state=tk.NORMAL)
+
+    def play_game(self):
+        self.timer_running = True
+        self.canvas.bind("<Left>", self.move_left)
+        self.canvas.bind("<Right>", self.move_right)
+        self.canvas.bind("<Up>", self.move_up)
+        self.canvas.bind("<Down>", self.move_down)
+        self.update_timer()
+        self.undo_button.config(state=tk.NORMAL)
+        self.reset_button.config(state=tk.NORMAL)
+        self.pause_button.config(state=tk.NORMAL)
+        self.play_button.config(state=tk.DISABLED)
+
+    def reset_game(self):
+        self.board = [[0] * self.grid_size for _ in range(self.grid_size)]
+        self.score = 0
+        self.game_over = False
+        self.history = []
+        self.start_time = None
+        self.elapsed_time = 0
+        self.timer_running = True
+        self.create_new_tile()
+        self.create_new_tile()
+        self.draw_board()
+        self.reset_button.config(text="Reset Game") 
+        self.save_high_score()  
+root = tk.Tk()
+game = Game2048(root)
+root.mainloop()
